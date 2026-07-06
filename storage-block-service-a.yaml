@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: e2-storage-block-service-a
+  namespace: <your-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: service-a
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - <region1-storage-pe-ip>/32

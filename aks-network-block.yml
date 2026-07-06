@@ -1,0 +1,148 @@
+name: AKS Storage Chaos Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Block or Unblock storage access'
+        required: true
+        type: choice
+        options:
+          - block
+          - unblock
+      region:
+        description: 'Storage region to target'
+        required: true
+        type: choice
+        options:
+          - all
+          - e2
+          - c1
+      services:
+        description: 'Services to target'
+        required: true
+        type: choice
+        options:
+          - all
+          - service-a
+          - service-b
+          - service-e
+          - service-c
+          - service-d
+
+env:
+  RESOURCE_GROUP: <your-aks-resource-group>
+  AKS_NAME: <your-aks-cluster-name>
+  NAMESPACE: <your-namespace>
+
+jobs:
+  chaos:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: >-
+            {
+              "clientId":"${{ secrets.NONPRD_AUT_ARM_CLIENT_ID_SPN }}",
+              "clientSecret":"${{ secrets.NONPRD_AUT_ARM_SECRET_SPN }}",
+              "subscriptionId":"${{ secrets.NONPRD_MGT_SUB_ID }}",
+              "tenantId":"${{ secrets.ARM_TENANT_ID }}"
+            }
+
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ env.AKS_NAME }} \
+            --admin \
+            --overwrite-existing
+
+      - name: Set Target Matrix
+        id: matrix
+        run: |
+          if [ "${{ github.event.inputs.region }}" = "all" ]; then
+            REGIONS="e2 c1"
+          else
+            REGIONS="${{ github.event.inputs.region }}"
+          fi
+
+          if [ "${{ github.event.inputs.services }}" = "all" ]; then
+            SERVICES="service-a service-b service-e service-c service-d"
+          else
+            SERVICES="${{ github.event.inputs.services }}"
+          fi
+
+          echo "regions=$REGIONS" >> $GITHUB_OUTPUT
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+
+      - name: Block Storage Access
+        if: ${{ github.event.inputs.action == 'block' }}
+        run: |
+          for region in ${{ steps.matrix.outputs.regions }}; do
+            for svc in ${{ steps.matrix.outputs.services }}; do
+              echo "🔒 Blocking $svc from $region storage..."
+              kubectl apply -f k8s/network-policies/${region}-storage-block-${svc}.yaml
+            done
+          done
+
+      - name: Unblock Storage Access
+        if: ${{ github.event.inputs.action == 'unblock' }}
+        run: |
+          for region in ${{ steps.matrix.outputs.regions }}; do
+            for svc in ${{ steps.matrix.outputs.services }}; do
+              echo "🔓 Unblocking $svc from $region storage..."
+              kubectl delete networkpolicy ${region}-storage-block-${svc} \
+                -n ${{ env.NAMESPACE }} --ignore-not-found
+            done
+          done
+
+      - name: Verify Network Policies
+        run: |
+          echo "📋 Active Network Policies in ${{ env.NAMESPACE }}:"
+          kubectl get networkpolicy -n ${{ env.NAMESPACE }}
+
+      - name: Test Connectivity
+        run: |
+          E2_IP="<region1-storage-pe-ip>"
+          C1_IP="<region2-storage-pe-ip>"
+
+          for region in ${{ steps.matrix.outputs.regions }}; do
+            if [ "$region" = "e2" ]; then
+              IP=$E2_IP
+            else
+              IP=$C1_IP
+            fi
+
+            for svc in ${{ steps.matrix.outputs.services }}; do
+              echo "🔍 Testing $svc → $region storage ($IP)..."
+              POD=$(kubectl get pod -n ${{ env.NAMESPACE }} -l app=${svc} \
+                -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+              if [ -z "$POD" ]; then
+                echo "⚠️  No pod found for $svc — skipping"
+                continue
+              fi
+
+              kubectl exec $POD -n ${{ env.NAMESPACE }} -- \
+                nc -zv -w 5 $IP 443 2>&1 \
+                && echo "✅ $svc → $region: Connected" \
+                || echo "🔒 $svc → $region: Blocked"
+            done
+          done
+
+      - name: Job Summary
+        run: |
+          echo "### 🧪 AKS Storage Chaos Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | \`${{ github.event.inputs.action }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Region | \`${{ github.event.inputs.region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Services | \`${{ github.event.inputs.services }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Time (UTC) | $(date -u) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Namespace | \`${{ env.NAMESPACE }}\` |" >> $GITHUB_STEP_SUMMARY
