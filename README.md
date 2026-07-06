@@ -10,8 +10,8 @@ Simulate Azure Storage regional failures in AKS using Kubernetes NetworkPolicy. 
 AKS Pod (app=service-a)
   │
   ▼  Egress blocked by NetworkPolicy
-<region1-storage-pe-ip>:443  ← E2 Storage Private Endpoint
-<region2-storage-pe-ip>:443   ← C1 Storage Private Endpoint
+<region1-storage-pe-ip>:443  ← Region1 Storage Private Endpoint
+<region2-storage-pe-ip>:443   ← Region2 Storage Private Endpoint
   │
   ▼
 Azure Storage Account (GRS)
@@ -19,34 +19,6 @@ Azure Storage Account (GRS)
 
 ---
 
-## Repo Structure
-
-```
-.
-├── .github/
-│   └── workflows/
-│       └── aks-network-block.yml   # GitHub Actions workflow
-├── k8s/
-│   └── network-policies/
-│       ├── e2-storage-block-service-a.yaml
-│       ├── e2-storage-block-service-b.yaml
-│       ├── e2-storage-block-service-e.yaml
-│       ├── e2-storage-block-service-c.yaml
-│       ├── e2-storage-block-service-d.yaml
-│       ├── c1-storage-block-service-a.yaml
-│       ├── c1-storage-block-service-b.yaml
-│       ├── c1-storage-block-service-e.yaml
-│       ├── c1-storage-block-service-c.yaml
-│       └── c1-storage-block-service-d.yaml
-├── scripts/
-│   ├── generate-policies.sh   # Generate all yaml files
-│   ├── block.sh               # Apply blocks manually
-│   ├── unblock.sh             # Remove blocks manually
-│   └── verify.sh              # Test connectivity from pods
-└── README.md
-```
-
----
 
 ## Storage Endpoints
 
@@ -64,7 +36,7 @@ Go to **Actions → AKS Storage Chaos Test → Run workflow**
 | Input | Options |
 |-------|---------|
 | Action | `block` / `unblock` |
-| Region | `all` / `e2` / `c1` |
+| Region | `all` / `r1` / `r2` |
 | Services | `all` / `service-a` / `service-b` / `service-e` / `service-c` / `service-d` |
 
 ### Required Secrets
@@ -123,19 +95,7 @@ kubectl exec -it <pod> -n <your-namespace> -- \
 
 # Or via kubectl directly
 kubectl delete networkpolicy \
-  e2-storage-block-service-a \
-  e2-storage-block-service-b \
-  e2-storage-block-service-e \
-  e2-storage-block-service-c \
-  e2-storage-block-service-d \
-  c1-storage-block-service-a \
-  c1-storage-block-service-b \
-  c1-storage-block-service-e \
-  c1-storage-block-service-c \
-  c1-storage-block-service-d \
-  -n <your-namespace>
-```
-
+  storage-block-service-a \
 ---
 
 ## Prerequisites
