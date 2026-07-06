@@ -1,4 +1,4 @@
-# AKS Storage Chaos Testing — Network Policy Based DR Simulation
+# AKS Storage DR Testing — Network Policy Based DR Simulation
 
 Simulate Azure Storage regional failures in AKS using Kubernetes NetworkPolicy. Block private endpoint traffic at the pod level to test GRS failover behavior — without any infrastructure changes.
 
